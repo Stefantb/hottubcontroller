@@ -12,11 +12,7 @@ esphome:
   name: ${unitname}
   platform: ESP32
   board: esp-wrover-kit
-#  includes:
-#    - display_controller.h
 
-#  libraries:
-#    - TFT_eSPI
   on_boot:
     - wait_until:
         api.connected:
@@ -37,14 +33,6 @@ logger:
 api:
 ota:
 
-#web_server:
-#  port: 80
-
-font:
-  - file: 'arial.ttf'
-    id: font1
-    size: 12
-    
 globals:
   # Constants
   - id: per2volt
@@ -83,56 +71,15 @@ globals:
     type: float
     initial_value: '1'
 
-# Example configuration entry
-i2c:
-  sda: GPIO21
-  scl: GPIO22
-
 spi:
   clk_pin: GPIO18
   mosi_pin: GPIO23
 
-display:
-  - platform: ssd1306_i2c
-    id: iic_display
-    model: "SSD1306 128x64"
-    address: 0x3C
-    pages:
-      - id: valve_opening
-        lambda: |-
-          it.line(0, 0, 128, 0);
-          it.printf(64, 5, id(font1), TextAlign::TOP_CENTER, "Hottub Controller V2");
-          it.line(0, 20, 128, 20);
-          it.printf(3, 23, id(font1), TextAlign::TOP_LEFT, "T: %.1f°, %.1f%%, %.1f%%", id(id_inflow_temp).state, id(id_motor_hot), id(id_motor_cold));
-          if (id(ctrl_state) == id(STATE_CLIMATE))
-            it.printf(3, 43, id(font1), TextAlign::TOP_LEFT, "State: CLIMATE");
-          else if (id(ctrl_state) == id(STATE_MANUAL))
-            it.printf(3, 43, id(font1), TextAlign::TOP_LEFT, "State: MANUAL");
-          else if (id(ctrl_state) == id(STATE_DEFREEZING))
-            it.printf(3, 43, id(font1), TextAlign::TOP_LEFT, "State: DEFREEZING");
-
-  - platform: st7789v
-    backlight_pin: GPIO13
-    cs_pin: GPIO13
-    dc_pin: GPIO2
-    reset_pin: GPIO4
-    lambda: |-
-      it.print(0, 0, id(font1), "Hello World!");
-      
 dallas:
   - id: id_output_temperature
     pin: ${inp_sensor_1}
     update_interval: 1s
 
-#  - id: hottub_temperature
-#    pin: ${inp_sensor_2}
-#    update_interval: 1s
-
-#  - id: hottub_defreeze_temperature
-#    pin: ${inp_sensor_3}
-#    update_interval: 5s
-
-    
 output:
   - platform: esp32_dac
     pin: ${outp_da1}
@@ -147,23 +94,17 @@ output:
     id: id_motor_hot
     write_action:
       - lambda: |-
-          if (id(ctrl_state) == id(STATE_CLIMATE)) {
-            if (id(id_pid_ctrl).mode == CLIMATE_MODE_OFF) {
-              id(id_da1_motor_hot).set_level(0);
-            }
-            else if (id(id_pid_ctrl).mode != CLIMATE_MODE_OFF) {
-              if (id(id_inflow_temp).state < id(max_temperature)) {
-                float y = id(a_const) * state + id(id_flow_strength).state * id(per2volt);
-                if (y > 1) y = 1;
-                if (y < 0) y = 0;
-                id(id_da1_motor_hot).set_level(y);
-              }
-              else
-                id(id_run_overheating).execute();
+          id(pid_hot_output).publish_state(state*100);
 
-              if (!id(id_run_timeout).is_running())
-                id(id_run_timeout).execute();
-            }
+          if (id(id_manual_control).state == 0)
+          {
+              if (id(id_pid_ctrl).mode == CLIMATE_MODE_HEAT_COOL)
+              {
+                float ctrl = state * 100;
+                auto call = id(id_ctrl_signale).make_call();
+                call.set_value(ctrl);
+                call.perform();
+              }
           }
 
   - platform: template
@@ -171,41 +112,17 @@ output:
     id: id_motor_cold
     write_action:
       - lambda: |-
-          if (id(ctrl_state) == id(STATE_CLIMATE)) {
-            if (id(id_pid_ctrl).mode == CLIMATE_MODE_OFF)
-              id(id_da2_motor_cold).set_level(0);
-            else if (id(id_pid_ctrl).mode != CLIMATE_MODE_OFF) {
-              if (id(id_inflow_temp).state < id(max_temperature)) {
-                float y = id(a_const) * state + id(id_flow_strength).state * id(per2volt);
-                if (y > 1) y = 1;
-                if (y < 0) y = 0;
-                id(id_da2_motor_cold).set_level(y);
-              }
-              else
-                id(id_run_overheating).execute();
-                
-              if (!id(id_run_timeout).is_running())
-                id(id_run_timeout).execute();
-            }
-          }
+          id(pid_cold_output).publish_state(state*100);
 
-  - platform: template
-    type: float
-    id: id_motor_hot_defreeze
-    write_action:
-      - lambda: |-
-          if (id(ctrl_state) == id(STATE_DEFREEZING)) {
-            //if (id(id_inflow_temp).state < id(max_temperature)) {
-              float m = id(id_max_defreeze).state * id(per2volt);
-              float b = id(id_min_defreeze).state * id(per2volt);
-              float a = m - b;
-              float y = a * state + b;
-              //ESP_LOGI("custom", "Y = %.3f * %.3f + %.3f = %.3f", a, state, b, y);
-              id(id_da1_motor_hot).set_level(y);
-              id(id_da2_motor_cold).set_level(0);
-            //}
-            //else 
-            //  id(id_run_overheating).execute();
+          if (id(id_manual_control).state == 0)
+          {
+              if (id(id_pid_ctrl).mode == CLIMATE_MODE_HEAT_COOL)
+              {
+                float ctrl = -state * 100;
+                auto call = id(id_ctrl_signale).make_call();
+                call.set_value(ctrl);
+                call.perform();
+              }
           }
           
 switch:
@@ -251,6 +168,15 @@ switch:
     name: ${STR_OUTPUT_REL6}
     id: id_gpio_rel6
 
+  - platform: template
+    name: ${STR_BTN_MANUAL_CTRL}
+    id: id_manual_control
+    optimistic: true
+    turn_off_action:
+      - lambda: ESP_LOGI("custom", "Manual OFF");
+    turn_on_action:
+      - lambda: ESP_LOGI("custom", "Manual ON");
+
 
   #-----------------------------------------------------------------------------
 text_sensor:
@@ -266,24 +192,13 @@ text_sensor:
 
 
 sensor:
-  - platform: aht10
-    temperature:
-      name: ${STR_INTERNAL_TEMP}
-    humidity:
-      name: ${STR_INTERNAL_HUM}
-    update_interval: 5s
-  #-----------------------------------------------------------------------------
-  # Target flow
   - platform: template
-    id: id_target_flow_percentge
-    name: ${STR_SENSOR_TAR_FLOW}
-    unit_of_measurement: '%'
-    
-  # Current flow  
+    id: pid_hot_output
+    name: pid_hot_out
+
   - platform: template
-    id: id_current_flow_percentage
-    name: ${STR_SENSOR_CUR_FLOW}
-    unit_of_measurement: '%'
+    id: pid_cold_output
+    name: pid_cold_out
 
   # Current hot flow  
   - platform: template
@@ -352,69 +267,12 @@ sensor:
   - platform: dallas
     id: id_inflow_temp
     dallas_id: id_output_temperature
-    address: 0xA80008039D1DC610
+    address: 0xdb00000de4caef28
     name: ${STR_SENSOR_OUT_TEMP}
     on_value:
       then:
-        - display.page.show: valve_opening
+        # - display.page.show: valve_opening
         - lambda: id(id_check_state).execute();
-
-
-  # Sensor 1 (bottom)
-#  - platform: dallas
-#    id: htc_tub_temp1
-#    dallas_id: hottub_temperature
-#    address: 0xA90008039CB95810
-#    name: ${STR_SENSOR_TUB_TEMP1}
-
-  # Sensor 2
-#  - platform: dallas
-#    id: htc_tub_temp2
-#    dallas_id: hottub_temperature
-#    address: 0xC60008039D02CA10
-#    name: ${STR_SENSOR_TUB_TEMP2}
-
-  # Sensor 3
-#  - platform: dallas
-#    id: htc_tub_temp3
-#    dallas_id: hottub_temperature
-#    address: 0xC40008039D5DC110
-#    name: ${STR_SENSOR_TUB_TEMP3}
-
-  # Sensor 4
-#  - platform: dallas
-#    id: htc_tub_temp4
-#    dallas_id: hottub_temperature
-#    address: 0xBF0008039C8B4510
-#    name: ${STR_SENSOR_TUB_TEMP4}
-
-  # Sensor 5
-#  - platform: dallas
-#    id: htc_tub_temp5
-#    dallas_id: hottub_temperature
-#    address: 0x980008039CA9E510
-#    name: ${STR_SENSOR_TUB_TEMP5}
-
-  # Sensor 6
-#  - platform: dallas
-#    id: htc_tub_temp6
-#    dallas_id: hottub_temperature
-#    address: 0x940008039D15D510
-#    name: ${STR_SENSOR_TUB_TEMP6}
-
-  # Sensor 7
-#  - platform: dallas
-#    id: htc_tub_temp7
-#    dallas_id: hottub_temperature
-#    address: 0x5B0008039CBE4310
-#    name: ${STR_SENSOR_TUB_TEMP7}
-
-  # Sensor 8 (top)
-#  - platform: dallas
-#    id: htc_tub_temp8
-#    dallas_id: hottub_temperature
-#    address: 0xAE0008039D42EB10
-#    name: ${STR_SENSOR_TUB_TEMP8}
 
   #-----------------------------------------------------------------------------
   # Motor control feedback
@@ -430,13 +288,6 @@ sensor:
           {
             float hotState = id(id_adc1_motor_hot).state;
             id(id_hot_flow_percentage).publish_state(hotState * id(volt2per));
-
-            float a = 100.0/(100.0-id(id_min_defreeze).state);
-            float b = -a * id(id_min_defreeze).state;
-            float x = (id(id_adc2_motor_cold).state + hotState)/2*id(volt2per);
-            float y = a * x + b;
-            if (y < 0) y = 0;
-            id(id_current_flow_percentage).publish_state(y);
           }
 
   - platform: adc
@@ -451,13 +302,6 @@ sensor:
           {
             float coldState = id(id_adc2_motor_cold).state; 
             id(id_cold_flow_percentage).publish_state(coldState * id(volt2per));
-  
-            float a = 100.0/(100.0-id(id_min_defreeze).state);
-            float b = -a * id(id_min_defreeze).state;
-            float x = (id(id_adc1_motor_hot).state + coldState)/2*id(volt2per);
-            float y = a * x + b;
-            if (y < 0) y = 0;
-            id(id_current_flow_percentage).publish_state(y);
           }
 
   #-----------------------------------------------------------------------------
@@ -476,91 +320,30 @@ sensor:
     attenuation: 11db
     update_interval: 1s
 
-  #-----------------------------------------------------------------------------
-  # Interface values in homeassistant
-  - platform: homeassistant
-    name: ${STR_UI_FLOW_TIMEOUT}
-    entity_id: input_number.htc2_flow_timeout
-    id: id_flow_timeout
-    on_value:
-      then:
-        - lambda: |-
-            ESP_LOGI("custom", "New timeout: %.0f minutes", id(id_flow_timeout).state);
-            if (id(id_pid_ctrl).mode != CLIMATE_MODE_OFF) {
-              id(id_run_timeout).stop();
-              id(id_run_timeout).execute();
-            }
+  - platform: pid
+    name: "PID heat"
+    climate_id: id_pid_ctrl
+    type: HEAT
 
-  - platform: homeassistant
-    name: ${STR_UI_FLOW_STRENGTH}
-    entity_id: input_number.htc2_flow_strength
-    id: id_flow_strength
-    on_value:
-      then:
-        - lambda: |-
-            id(a_const) = (100.0-id(id_flow_strength).state)/100.0;
-            ESP_LOGI("custom", "New a const: %.2f", id(a_const));
-            id(id_set_manual_hot).execute();
-            id(id_set_manual_cold).execute();
+  - platform: pid
+    name: "PID cool"
+    climate_id: id_pid_ctrl
+    type: COOL
 
-  - platform: homeassistant
-    name: ${STR_UI_DEFREEZE_MAX}
-    entity_id: input_number.htc2_max_defreeze
-    id: id_max_defreeze
-    on_value:
-      then:
-        - lambda: |-
-            ESP_LOGI("custom", "New max defreeze: %.1f", id(id_max_defreeze).state);
-  
-  - platform: homeassistant
-    name: ${STR_UI_DEFREEZE_MIN}
-    entity_id: input_number.htc2_min_defreeze
-    id: id_min_defreeze
-    on_value:
-      then:
-        - lambda: |-
-            ESP_LOGI("custom", "New min defreeze: %.1f", id(id_min_defreeze).state);
+  - platform: pid
+    name: "PID KI"
+    climate_id: id_pid_ctrl
+    type: KI
 
-  - platform: homeassistant
-    name: ${STR_UI_MANUAL_HOT}
-    entity_id: input_number.htc2_manual_hot
-    id: id_manual_hot
-    on_value:
-      then:
-        - lambda: |-
-            ESP_LOGI("custom", "New manual hot: %.1f", id(id_manual_hot).state);
-            id(id_set_manual_hot).execute();
+  - platform: pid
+    name: "PID KP"
+    climate_id: id_pid_ctrl
+    type: KP
 
-  - platform: homeassistant
-    name: ${STR_UI_MANUAL_COLD}
-    entity_id: input_number.htc2_manual_cold
-    id: id_manual_cold
-    on_value:
-      then:
-        - lambda: |-
-            ESP_LOGI("custom", "New manual cold: %.1f", id(id_manual_cold).state);
-            id(id_set_manual_cold).execute();
-
-  - platform: homeassistant
-    name: ${STR_UI_MANUAL_COLD}
-    entity_id: sensor.general_usb1_temperature1
-    id: id_valve_temperature
-    on_value:
-      then:
-        - lambda: |-
-            ESP_LOGI("custom", "New valve temperature: %.1f", id(id_valve_temperature).state);
-            id(id_check_state).execute();
-
-binary_sensor:
-  - platform: homeassistant
-    name: ${STR_UI_FORCE_CTRL_MODE}
-    entity_id: input_boolean.htc2_manual_control
-    id: id_manual_control
-    on_state:
-      then:
-        - lambda: |-
-            if (!id(id_check_state).is_running()) 
-              id(id_check_state).execute();
+  - platform: pid
+    name: "PID KD"
+    climate_id: id_pid_ctrl
+    type: KD
 
 
 climate:
@@ -574,43 +357,59 @@ climate:
     heat_output: id_motor_hot
     cool_output: id_motor_cold
     control_parameters:
-      kp: 0.42 #kp: 0.09     # 0.10913
-      ki: 0.012 #ki: 0.00398  # 0.00398
-      kd: 3.7 #kd: 1.5      # 0.74752
+      kp: 0.19557
+      ki: 0.00399
+      kd: 2.39572
     visual:
       min_temperature: 30 °C
       max_temperature: 47 °C
       temperature_step: 0.1 °C
 
-  # PID control for defreezing
-  - platform: pid
-    name: ${STR_CLIMATE_PID_DEFREEZE}
-    id: id_pid_ctrl_defreeze
-    sensor: id_valve_temperature
-    default_target_temperature: 1°C
-    heat_output: id_motor_hot_defreeze
-    control_parameters:
-      kp: 0.1
-      ki: 1
-      kd: 3      
-    visual:
-      min_temperature: -2 °C
-      max_temperature: 2 °C
-      temperature_step: 0.1 °C
-      
       
 script:
-  - id: id_run_timeout
-    mode: restart   
+  - id: id_adjust_water_outputs
+    mode: single
     then:
-      - delay: !lambda |-
-          ESP_LOGI("custom", "System ON, stops after %.0f minutes.", id(id_flow_timeout).state);
-          id(endtime) = id(id_uptime_sec).raw_state + (id(id_flow_timeout).state * 60);
-          return (id(id_flow_timeout).state * 1000 * 60); 
       - lambda: |-
-          id(endtime) = 0;
-          ESP_LOGI("custom", "System OFF, timeout reached.");
-          id(id_stop_climate).execute(); // Do this last because it stops this script.
+          int x = id(id_ctrl_signale).state;
+          int h = id(id_flow_strength).state + x/2;
+          int h_ov = 0;
+
+          if(h > 100)
+          {
+            h_ov = 100 - h;
+            h = 100;
+          }
+          else if(h < 0)
+          {
+            h_ov = -h;
+            h = 0;
+          }
+
+          int c = id(id_flow_strength).state - x/2;
+          int c_ov = 0;
+
+          if(c > 100)
+          {
+            c_ov = 100 - c;
+            c = 100;
+          }
+          else if(c < 0)
+          {
+            c_ov = -c;
+            c = 0;
+          }
+
+          h += c_ov;
+          c += h_ov;
+
+          auto hcall = id(id_hot_output_slider).make_call();
+          hcall.set_value(h);
+          hcall.perform();
+
+          auto ccall = id(id_cold_output_slider).make_call();
+          ccall.set_value(c);
+          ccall.perform();
 
   - id: id_run_overheating
     mode: single
@@ -624,47 +423,12 @@ script:
     mode: single
     then:
       - lambda: |-
-          int newstate = id(STATE_CLIMATE);
-          
-          if (id(id_manual_control).state)
-            newstate = id(STATE_MANUAL);
-          else if (id(id_pid_ctrl).mode != CLIMATE_MODE_OFF)
-            newstate = id(STATE_CLIMATE);
-          else if (id(id_valve_temperature).state <= id(id_pid_ctrl_defreeze).target_temperature)
-            newstate = id(STATE_DEFREEZING);
+          if (id(id_manual_control).state == 0)
+          {
+              if (id(id_pid_ctrl).mode == CLIMATE_MODE_HEAT_COOL)
+              {
 
-          if (id(ctrl_state) != newstate) {
-            id(ctrl_state) = newstate;
-            
-            if (id(ctrl_state) == id(STATE_CLIMATE)) {
-              ESP_LOGI("custom", "Control Mode Climate");
-              id(id_stop_defreeze).execute();
-            }
-            else if (id(ctrl_state) == id(STATE_MANUAL)) {
-              ESP_LOGI("custom", "Control Mode Manual");
-              id(id_stop_climate).execute();
-              id(id_stop_defreeze).execute();
-              id(id_set_manual_hot).execute();
-              id(id_set_manual_cold).execute();
-            }
-            else if (id(ctrl_state) == id(STATE_DEFREEZING)) {
-              ESP_LOGI("custom", "Control Mode Defreezing");
-              auto call = id(id_pid_ctrl_defreeze).make_call();
-              call.set_mode("HEAT");
-              call.perform();
-            }
-          }
-          else {
-            if (id(ctrl_state) == id(STATE_MANUAL)) {
-              if (id(id_pid_ctrl_defreeze).mode != CLIMATE_MODE_OFF)
-                id(id_stop_defreeze).execute();
-              if (id(id_pid_ctrl).mode != CLIMATE_MODE_OFF)
-                id(id_stop_climate).execute();
-            }
-            else if (id(ctrl_state) == id(STATE_CLIMATE)) {
-              if (id(id_pid_ctrl_defreeze).mode != CLIMATE_MODE_OFF)
-                id(id_stop_defreeze).execute();
-            }
+              }
           }
 
   - id: id_stop_climate
@@ -673,44 +437,61 @@ script:
           auto call = id(id_pid_ctrl).make_call();
           call.set_mode("OFF");
           call.perform();
-          id(id_run_timeout).stop();
 
   - id: id_stop_defreeze
     then:
       - lambda: |-
-          auto call = id(id_pid_ctrl_defreeze).make_call();
-          call.set_mode("OFF");
-          call.perform();
+          ESP_LOGI("custom", "stop defreeze");
+      
+number:
+  - platform: template
+    name: hot_output
+    id: id_hot_output_slider
+    optimistic: true
+    min_value: 0
+    max_value: 100
+    step: 1
+    mode: slider
+    on_value:
+      then:
+        lambda: 'id(id_da1_motor_hot).set_level(x/100);'
 
-  - id: id_set_manual_hot
-    then:
-      - lambda: |-
-              if (id(ctrl_state) == id(STATE_MANUAL)) {
-                if (id(id_valve_temperature).state < id(max_temperature)) {
-                  float y = (id(a_const) * id(id_manual_hot).state + id(id_flow_strength).state) * id(per2volt);
-                  id(id_da1_motor_hot).set_level(y);
-                  ESP_LOGI("custom", "Manual hot : %.2f, Motor value: %.2f", id(id_manual_hot).state, y);
-                }
-                else
-                  id(id_run_overheating).execute();
-              }
+  - platform: template
+    name: cold_output
+    id: id_cold_output_slider
+    optimistic: true
+    min_value: 0
+    max_value: 100
+    step: 1
+    mode: slider
+    on_value:
+      then:
+        lambda: 'id(id_da2_motor_cold).set_level(x/100);'
 
-  - id: id_set_manual_cold
-    then:
-      - lambda: |-
-              if (id(ctrl_state) == id(STATE_MANUAL)) {
-                if (id(id_valve_temperature).state < id(max_temperature)) {
-                  float y = (id(a_const) * id(id_manual_cold).state + id(id_flow_strength).state) * id(per2volt);
-                  id(id_da2_motor_cold).set_level(y);
-                  ESP_LOGI("custom", "Manual cold: %.2f, Motor value: %.2f", id(id_manual_cold).state, y);
-                }
-                else
-                  id(id_run_overheating).execute();
-              }
-      
-      
-      
-      
-      
-      
-      
+  - platform: template
+    name: flow_strength
+    id: id_flow_strength
+    optimistic: true
+    min_value: 0
+    max_value: 100
+    step: 1
+    mode: slider
+    on_value:
+      then:
+        - lambda: |-
+            id(id_adjust_water_outputs).execute();
+
+  - platform: template
+    name: ctrl_signal
+    id: id_ctrl_signale
+    optimistic: true
+    min_value: -100
+    max_value: 100
+    step: 10
+    mode: slider
+    on_value:
+      then:
+        - lambda: |-
+            id(id_adjust_water_outputs).execute();
+
+
