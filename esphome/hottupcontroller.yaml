@@ -33,6 +33,10 @@ logger:
 api:
 ota:
 
+  # Example configuration entry
+# web_server:
+#   port: 80
+
 globals:
   # Constants
   - id: per2volt
@@ -41,7 +45,8 @@ globals:
 
   - id: volt2per
     type: float
-    initial_value: '25.64'# ADC reads max 3.9v (11db) which becomes 100 
+    initial_value: '31.95'
+    # ADC reads max 3.13v @ 100% -> 100 / 3.13 =~ 31.95
 
   - id: max_temperature
     type: float
