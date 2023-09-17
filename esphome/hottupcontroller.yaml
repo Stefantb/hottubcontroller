@@ -1,12 +1,16 @@
-#------------------------------------------------------------------------------
-# 
+---
+# *****************************************************************************
+#
+# *****************************************************************************
 substitutions:
   unitname: htc2
   prefix: HTC2
 
   <<: !include ../htc2_pins.yaml
   <<: !include ../htc2_strings.yaml
-  
+
+external_components:
+  - source: my_components
 
 esphome:
   name: ${unitname}
@@ -33,49 +37,43 @@ logger:
 api:
 ota:
 
-  # Example configuration entry
+# *****************************************************************************
+#
+# *****************************************************************************
+# Example configuration entry
 # web_server:
 #   port: 80
 
+# *****************************************************************************
+#
+# *****************************************************************************
 globals:
   # Constants
-  - id: per2volt
-    type: float
-    initial_value: '0.01' # DAC is controlled with 0..1 where 1 becomes VCC (3.3v)
-
   - id: volt2per
     type: float
-    initial_value: '31.95'
+    initial_value: "31.95"
     # ADC reads max 3.13v @ 100% -> 100 / 3.13 =~ 31.95
-
-  - id: max_temperature
-    type: float
-    initial_value: '55'
 
   - id: endtime
     type: float
-    initial_value: '0'
+    initial_value: "0"
 
-    # Possible state values
-  - id: STATE_CLIMATE
-    type: int
-    initial_value: '0'
-  - id: STATE_MANUAL
-    type: int
-    initial_value: '1'
-  - id: STATE_DEFREEZING
-    type: int
-    initial_value: '2'
-    
-    # The global state variable
-  - id: ctrl_state
-    type: int
-    initial_value: '-1'
-    
-  - id: a_const
-    type: float
-    initial_value: '1'
+# *****************************************************************************
+#
+# *****************************************************************************
+blender:
+  hot_out_dac: id_da1_motor_hot
+  cold_out_dac: id_da2_motor_cold
+  flow_strength_in: id_flow_strength
+  pid_controller_in: id_pid_ctrl
+  manual_switch: id_manual_control
+  manual_hot_valve: id_hot_output_slider
+  manual_cold_valve: id_cold_output_slider
+  defrost_switch: id_defrost
 
+# *****************************************************************************
+#
+# *****************************************************************************
 spi:
   clk_pin: GPIO18
   mosi_pin: GPIO23
@@ -85,13 +83,16 @@ dallas:
     pin: ${inp_sensor_1}
     update_interval: 1s
 
+# *****************************************************************************
+#
+# *****************************************************************************
 output:
   - platform: esp32_dac
     pin: ${outp_da1}
     id: id_da1_motor_hot
 
   - platform: esp32_dac
-    pin: ${outp_da2}       
+    pin: ${outp_da2}
     id: id_da2_motor_cold
 
   - platform: template
@@ -100,16 +101,12 @@ output:
     write_action:
       - lambda: |-
           id(pid_hot_output).publish_state(state*100);
-
-          if (id(id_manual_control).state == 0)
+          if (id(id_pid_ctrl).mode != CLIMATE_MODE_OFF)
           {
-              if (id(id_pid_ctrl).mode == CLIMATE_MODE_HEAT_COOL)
-              {
-                float ctrl = state * 100;
-                auto call = id(id_ctrl_signale).make_call();
-                call.set_value(ctrl);
-                call.perform();
-              }
+            float ctrl = state * 100;
+            auto call = id(id_ctrl_signale).make_call();
+            call.set_value(ctrl);
+            call.perform();
           }
 
   - platform: template
@@ -119,17 +116,17 @@ output:
       - lambda: |-
           id(pid_cold_output).publish_state(state*100);
 
-          if (id(id_manual_control).state == 0)
+          if (id(id_pid_ctrl).mode == CLIMATE_MODE_OFF)
           {
-              if (id(id_pid_ctrl).mode == CLIMATE_MODE_HEAT_COOL)
-              {
-                float ctrl = -state * 100;
-                auto call = id(id_ctrl_signale).make_call();
-                call.set_value(ctrl);
-                call.perform();
-              }
+            float ctrl = -state * 100;
+            auto call = id(id_ctrl_signale).make_call();
+            call.set_value(ctrl);
+            call.perform();
           }
-          
+
+# *****************************************************************************
+#
+# *****************************************************************************
 switch:
   #-----------------------------------------------------------------------------
   # PID autotune, Kp, Ki and Kd must be set to zero.
@@ -142,7 +139,7 @@ switch:
     turn_on_action:
       - climate.pid.autotune: id_pid_ctrl
       - lambda: ESP_LOGI("custom", "Autotune ON");
-      
+
   - platform: gpio
     pin: ${outp_rel1}
     name: ${STR_OUTPUT_REL1}
@@ -167,7 +164,7 @@ switch:
     pin: ${outp_rel5}
     name: ${STR_OUTPUT_REL5}
     id: id_gpio_rel5
-    
+
   - platform: gpio
     pin: ${outp_rel6}
     name: ${STR_OUTPUT_REL6}
@@ -182,20 +179,34 @@ switch:
     turn_on_action:
       - lambda: ESP_LOGI("custom", "Manual ON");
 
+  - platform: template
+    name: ${STR_BTN_DEFROST}
+    id: id_defrost
+    optimistic: true
+    # assumed_state: true
+    restore_mode: RESTORE_DEFAULT_ON
+    turn_off_action:
+      - lambda: ESP_LOGI("custom", "Defrost OFF");
+    turn_on_action:
+      - lambda: ESP_LOGI("custom", "Defrost ON");
 
-  #-----------------------------------------------------------------------------
+# *****************************************************************************
+#
+# *****************************************************************************
 text_sensor:
   - platform: template
     name: ${STR_SENSOR_FLOW_SEC}
     id: id_flow_countdown_txt
     icon: mdi:clock-start
-      
+
   - platform: template
-    name: ${STR_SENSOR_UPTIME}   
+    name: ${STR_SENSOR_UPTIME}
     id: id_uptime_txt
     icon: mdi:clock-start
 
-
+# *****************************************************************************
+#
+# *****************************************************************************
 sensor:
   - platform: template
     id: pid_hot_output
@@ -205,22 +216,22 @@ sensor:
     id: pid_cold_output
     name: pid_cold_out
 
-  # Current hot flow  
+  # Current hot flow
   - platform: template
     id: id_hot_flow_percentage
     name: ${STR_SENSOR_HOT_FLOW}
-    unit_of_measurement: '%'
+    unit_of_measurement: "%"
 
-  # Current cold flow  
+  # Current cold flow
   - platform: template
     id: id_cold_flow_percentage
     name: ${STR_SENSOR_CLD_FLOW}
-    unit_of_measurement: '%'
+    unit_of_measurement: "%"
 
   #-----------------------------------------------------------------------------
   # Uptime
   - platform: uptime
-    name: ${STR_SENSOR_SEC_SINCE_START}  
+    name: ${STR_SENSOR_SEC_SINCE_START}
     id: id_uptime_sec
     update_interval: 5s
     internal: true
@@ -244,7 +255,7 @@ sensor:
                   (hours ? String(hours) + "h " : "") +
                   (minutes ? String(minutes) + "m " : "") +
                   (String(seconds) + "s")
-                ).c_str();        
+                ).c_str();
               }
         - text_sensor.template.publish:
             id: id_uptime_txt
@@ -261,12 +272,10 @@ sensor:
                 (hours ? String(hours) + "h " : "") +
                 (minutes ? String(minutes) + "m " : "") +
                 (String(seconds) + "s")
-              ).c_str();        
-            
+              ).c_str();
 
   #-----------------------------------------------------------------------------
   # Dallas temperature sensors
-  
   # Output water. Because this sensor is updated every second, this is the best
   # place to check the state.
   - platform: dallas
@@ -274,10 +283,10 @@ sensor:
     dallas_id: id_output_temperature
     address: 0xdb00000de4caef28
     name: ${STR_SENSOR_OUT_TEMP}
-    on_value:
-      then:
-        # - display.page.show: valve_opening
-        - lambda: id(id_check_state).execute();
+    # on_value:
+    #   then:
+    #     # - display.page.show: valve_opening
+    #     - lambda: id(id_check_state).execute();
 
   #-----------------------------------------------------------------------------
   # Motor control feedback
@@ -296,7 +305,7 @@ sensor:
           }
 
   - platform: adc
-    pin: ${inp_ad2}       
+    pin: ${inp_ad2}
     name: ${STR_SENSOR_MOT_COLD}
     id: id_adc2_motor_cold
     attenuation: 11db
@@ -305,21 +314,21 @@ sensor:
       then:
         lambda: |-
           {
-            float coldState = id(id_adc2_motor_cold).state; 
+            float coldState = id(id_adc2_motor_cold).state;
             id(id_cold_flow_percentage).publish_state(coldState * id(volt2per));
           }
 
   #-----------------------------------------------------------------------------
   # Motor control feedback
   - platform: adc
-    pin: ${inp_ad3}       
+    pin: ${inp_ad3}
     name: ${STR_SENSOR_AD3}
     id: id_adc3
     attenuation: 11db
     update_interval: 1s
 
   - platform: adc
-    pin: ${inp_ad4}       
+    pin: ${inp_ad4}
     name: ${STR_SENSOR_AD4}
     id: id_adc4
     attenuation: 11db
@@ -350,10 +359,10 @@ sensor:
     climate_id: id_pid_ctrl
     type: KD
 
-
+# *****************************************************************************
+#
+# *****************************************************************************
 climate:
-  #-----------------------------------------------------------------------------
-  # PID control for hottub
   - platform: pid
     name: ${STR_CLIMATE_PID}
     id: id_pid_ctrl
@@ -362,80 +371,20 @@ climate:
     heat_output: id_motor_hot
     cool_output: id_motor_cold
     control_parameters:
-      kp: 0.19557
-      ki: 0.00399
-      kd: 2.39572
+      kp: 0.1342
+      ki: 0.00243
+      kd: 1.85359
+      min_integral: -1
+      max_integral: 1
     visual:
-      min_temperature: 30 °C
-      max_temperature: 47 °C
-      temperature_step: 0.1 °C
+      min_temperature: 0 °C
+      max_temperature: 65 °C
+      temperature_step: 0.5 °C
 
-      
+# *****************************************************************************
+#
+# *****************************************************************************
 script:
-  - id: id_adjust_water_outputs
-    mode: single
-    then:
-      - lambda: |-
-          int x = id(id_ctrl_signale).state;
-          int h = id(id_flow_strength).state + x/2;
-          int h_ov = 0;
-
-          if(h > 100)
-          {
-            h_ov = 100 - h;
-            h = 100;
-          }
-          else if(h < 0)
-          {
-            h_ov = -h;
-            h = 0;
-          }
-
-          int c = id(id_flow_strength).state - x/2;
-          int c_ov = 0;
-
-          if(c > 100)
-          {
-            c_ov = 100 - c;
-            c = 100;
-          }
-          else if(c < 0)
-          {
-            c_ov = -c;
-            c = 0;
-          }
-
-          h += c_ov;
-          c += h_ov;
-
-          auto hcall = id(id_hot_output_slider).make_call();
-          hcall.set_value(h);
-          hcall.perform();
-
-          auto ccall = id(id_cold_output_slider).make_call();
-          ccall.set_value(c);
-          ccall.perform();
-
-  - id: id_run_overheating
-    mode: single
-    then:
-      - lambda: |-
-          ESP_LOGW("custom", "Overheating - cooling triggered");
-          id(id_da1_motor_hot).set_level(0);
-          id(id_da2_motor_cold).set_level(1);
-          
-  - id: id_check_state
-    mode: single
-    then:
-      - lambda: |-
-          if (id(id_manual_control).state == 0)
-          {
-              if (id(id_pid_ctrl).mode == CLIMATE_MODE_HEAT_COOL)
-              {
-
-              }
-          }
-
   - id: id_stop_climate
     then:
       - lambda: |-
@@ -443,11 +392,9 @@ script:
           call.set_mode("OFF");
           call.perform();
 
-  - id: id_stop_defreeze
-    then:
-      - lambda: |-
-          ESP_LOGI("custom", "stop defreeze");
-      
+# *****************************************************************************
+#
+# *****************************************************************************
 number:
   - platform: template
     name: hot_output
@@ -457,9 +404,6 @@ number:
     max_value: 100
     step: 1
     mode: slider
-    on_value:
-      then:
-        lambda: 'id(id_da1_motor_hot).set_level(x/100);'
 
   - platform: template
     name: cold_output
@@ -469,9 +413,6 @@ number:
     max_value: 100
     step: 1
     mode: slider
-    on_value:
-      then:
-        lambda: 'id(id_da2_motor_cold).set_level(x/100);'
 
   - platform: template
     name: flow_strength
@@ -479,12 +420,9 @@ number:
     optimistic: true
     min_value: 0
     max_value: 100
+    initial_value: 100
     step: 1
     mode: slider
-    on_value:
-      then:
-        - lambda: |-
-            id(id_adjust_water_outputs).execute();
 
   - platform: template
     name: ctrl_signal
@@ -494,9 +432,3 @@ number:
     max_value: 100
     step: 10
     mode: slider
-    on_value:
-      then:
-        - lambda: |-
-            id(id_adjust_water_outputs).execute();
-
-

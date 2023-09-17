@@ -6,6 +6,9 @@ build:
 upload:
 	esphome run hottupcontroller.yaml
 
-.PHONY: build upload
+listen:
+	esphome logs hottupcontroller.yaml
+
+.PHONY: build upload listen
 
 
