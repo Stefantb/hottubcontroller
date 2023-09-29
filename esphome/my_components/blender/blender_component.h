@@ -34,17 +34,31 @@ static inline float clampf(float value, float min, float max)
 //*****************************************************************************
 //
 //*****************************************************************************
-class Valve
+struct Valve
 {
-
-    float lower_limit_ = 29;
-    float upper_limit_ = 100;
-    float out_value_   = 0;
-
     esphome::number::Number*      manual_override_ = nullptr;
     esphome::output::FloatOutput* out_dac_         = nullptr;
 
-  public:
+    float lower_limit_   = 0;
+    float upper_limit_   = 100;
+    float defrost_value_ = 0;
+    float out_value_     = 0;
+    bool  last_automation_   = false;
+    bool  defrost_       = false;
+
+    void set_ll(float v)
+    {
+        lower_limit_ = v;
+    }
+    void set_ul(float v)
+    {
+        upper_limit_ = v;
+    }
+    void set_defrost(float v)
+    {
+        defrost_value_ = v;
+    }
+
     void set_output(esphome::output::FloatOutput* out_dac)
     {
         this->out_dac_ = out_dac;
@@ -55,16 +69,29 @@ class Valve
         this->manual_override_ = in;
     }
 
-    void set_value(float value)
+    void set_value(float value, bool automation)
     {
         value = clampf(value, 0.0, 100.0);
 
         this->out_value_ = value;
 
-        // map the value on to the output range of the valve
-        float out_range  = upper_limit_ - lower_limit_;
-        float actual_out = lower_limit_ + value / 100 * out_range;
+        float ll = defrost_ ? defrost_value_ : 0;
+        float ul = 100;
+        if (automation)
+        {
+            ll = lower_limit_;
+            ul = upper_limit_;
+        }
+        // else if (last_automation_)
+        // {
+        //     // going out of automation
+        //     // the idea is to maybe delay the defrost output for a little while.
+        // }
+        last_automation_ = automation;
 
+        // map the value on to the output range of the valve
+        float out_range  = ul - ll;
+        float actual_out = ll + value / 100 * out_range;
         if (this->out_dac_)
         {
             this->out_dac_->set_level(actual_out / 100);
@@ -87,7 +114,7 @@ class Valve
 
     void defrost(bool enable)
     {
-        lower_limit_ = enable ? 32 : 29;
+        defrost_ = enable;
     }
 };
 
@@ -101,39 +128,9 @@ class BlenderComponent : public esphome::Component
     void loop() override;
     void dump_config() override;
 
-    void adjust_outputs(float ctrl, float flow);
+    void adjust_outputs(float ctrl, float flow, bool automation);
 
     // float get_setup_priority() const override { return setup_priority::AFTER_WIFI; }
-
-    void set_hot_out_dac(esphome::output::FloatOutput* out)
-    {
-        this->hot_valve_.set_output(out);
-    }
-
-    void set_cold_out_dac(esphome::output::FloatOutput* out)
-    {
-        this->cold_valve_.set_output(out);
-    }
-
-    void set_flow_strength_in(esphome::number::Number* in)
-    {
-        this->flow_strength_in_ = in;
-    }
-
-    void set_pid_controller(esphome::pid::PIDClimate* in)
-    {
-        this->control_in_ = in;
-    }
-
-    void set_manual_hot_valve(esphome::number::Number* in)
-    {
-        this->hot_valve_.set_manual_override_in(in);
-    }
-
-    void set_manual_cold_valve(esphome::number::Number* in)
-    {
-        this->cold_valve_.set_manual_override_in(in);
-    }
 
     void set_manual_in(esphome::switch_::Switch* in)
     {
@@ -143,6 +140,26 @@ class BlenderComponent : public esphome::Component
     void set_defrost_in(esphome::switch_::Switch* in)
     {
         this->defrost_in_ = in;
+    }
+
+    void set_pid_controller(esphome::pid::PIDClimate* in)
+    {
+        this->control_in_ = in;
+    }
+
+    void set_flow_strength_in(esphome::number::Number* in)
+    {
+        this->flow_strength_in_ = in;
+    }
+
+    Valve& hot_valve()
+    {
+        return hot_valve_;
+    }
+
+    Valve& cold_valve()
+    {
+        return cold_valve_;
     }
 
   private:

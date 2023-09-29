@@ -62,14 +62,21 @@ globals:
 #
 # *****************************************************************************
 blender:
-  hot_out_dac: id_da1_motor_hot
-  cold_out_dac: id_da2_motor_cold
-  flow_strength_in: id_flow_strength
-  pid_controller_in: id_pid_ctrl
   manual_switch: id_manual_control
-  manual_hot_valve: id_hot_output_slider
-  manual_cold_valve: id_cold_output_slider
   defrost_switch: id_defrost
+  pid_controller_in: id_pid_ctrl
+  flow_strength_in: id_flow_strength
+  hot_valve:
+    out_dac: id_da1_motor_hot
+    manual_input: id_hot_output_slider
+    out_lower_limit: 29
+    out_upper_limit: 100
+    out_defrost: 32
+  cold_valve:
+    out_dac: id_da2_motor_cold
+    manual_input: id_cold_output_slider
+    out_lower_limit: 29
+    out_upper_limit: 100
 
 # *****************************************************************************
 #

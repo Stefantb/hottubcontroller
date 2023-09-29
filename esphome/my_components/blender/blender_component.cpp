@@ -71,11 +71,11 @@ void BlenderComponent::loop()
         {
             float flow_strength = this->flow_strength_in_->state;
             float pid_out       = this->control_in_->get_output_value();
-            this->adjust_outputs(pid_out, flow_strength);
+            this->adjust_outputs(pid_out, flow_strength, true);
         }
         else
         {
-            this->adjust_outputs(0, 0);
+            this->adjust_outputs(0, 0, false);
         }
     }
 }
@@ -84,7 +84,7 @@ void BlenderComponent::loop()
 // -1 <= ctrl <= 1
 // 0 < flow <= 100
 //*****************************************************************************
-void BlenderComponent::adjust_outputs(float ctrl, float flow)
+void BlenderComponent::adjust_outputs(float ctrl, float flow, bool automation)
 {
     ctrl = clampf(ctrl, -1.0, 1.0);
     flow = clampf(flow, 0.0, 100.0);
@@ -101,8 +101,8 @@ void BlenderComponent::adjust_outputs(float ctrl, float flow)
         cold = 100;
     }
 
-    this->hot_valve_.set_value(hot);
-    this->cold_valve_.set_value(cold);
+    this->hot_valve_.set_value(hot, automation);
+    this->cold_valve_.set_value(cold, automation);
 }
 
 //*****************************************************************************
