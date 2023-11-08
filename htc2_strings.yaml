@@ -7,11 +7,12 @@ STR_BTN_TEMP_DEC: ${prefix} Decrement Temperature
 STR_BTN_PID_ATUNE: ${prefix} PID Autotune
 STR_BTN_MANUAL_CTRL: ${prefix} Manual Control
 STR_BTN_DEFROST: ${prefix} Defrost
+STR_BTN_CALIBRATE: ${prefix} Calibrate Valves
 
 STR_SENSOR_TAR_FLOW: ${prefix} Target Flow
 STR_SENSOR_CUR_FLOW: ${prefix} Current Flow
-STR_SENSOR_HOT_FLOW: ${prefix} Hot Water Flow
-STR_SENSOR_CLD_FLOW: ${prefix} Cold Water Flow
+STR_SENSOR_HOT_FLOW: ${prefix} Hot Motor State
+STR_SENSOR_CLD_FLOW: ${prefix} Cold Motor State
 
 STR_SENSOR_FLOW_SEC: ${prefix} Flow countdown
 STR_SENSOR_OUT_TEMP: ${prefix} Output Temperature

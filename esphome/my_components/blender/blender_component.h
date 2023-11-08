@@ -36,15 +36,31 @@ static inline float clampf(float value, float min, float max)
 //*****************************************************************************
 struct Valve
 {
-    esphome::number::Number*      manual_override_ = nullptr;
-    esphome::output::FloatOutput* out_dac_         = nullptr;
+    enum class DefrostState
+    {
+        INIT,
+        ACTIVE,
+        OFF
+    };
 
-    float lower_limit_   = 0;
-    float upper_limit_   = 100;
-    float defrost_value_ = 0;
-    float out_value_     = 0;
-    bool  last_automation_   = false;
-    bool  defrost_       = false;
+    enum class CalibrationState
+    {
+        IDLE,
+        INIT,
+        ACTIVE,
+    };
+
+    esphome::number::Number*      manual_override_ = nullptr;
+    esphome::output::FloatOutput* out_dac_         = nullptr; // dac writes 0.0 -> 1.0 (zero to 100%)
+    esphome::sensor::Sensor*      in_adc_          = nullptr; // adc reads in voltage (0.0 -> 3.3) v.
+
+    float            lower_limit_       = 0;
+    float            upper_limit_       = 100;
+    float            defrost_value_     = 0;
+    float            out_value_         = 0;
+    DefrostState     defrost_state_     = DefrostState::INIT;
+    CalibrationState calibration_state_ = CalibrationState::IDLE;
+    uint32_t         tally              = 0;
 
     void set_ll(float v)
     {
@@ -64,6 +80,11 @@ struct Valve
         this->out_dac_ = out_dac;
     }
 
+    void set_input_adc(esphome::sensor::Sensor* in_adc)
+    {
+        this->in_adc_ = in_adc;
+    }
+
     void set_manual_override_in(esphome::number::Number* in)
     {
         this->manual_override_ = in;
@@ -75,20 +96,71 @@ struct Valve
 
         this->out_value_ = value;
 
-        float ll = defrost_ ? defrost_value_ : 0;
-        float ul = 100;
+        float out_state = this->in_adc_->get_state() * 31.95;
+        // if (tally > 1000)
+        // {
+        //     ESP_LOGI("blender valve", "out_state: %f", out_state);
+        //     tally = 0;
+        // }
+        // ++tally;
+
         if (automation)
         {
-            ll = lower_limit_;
-            ul = upper_limit_;
+            write_output(value, lower_limit_, upper_limit_);
+            if (defrost_state_ != DefrostState::OFF)
+            {
+                defrost_state_ = DefrostState::INIT;
+            }
+            // ESP_LOGI("blender", "DefrostState::INIT");
         }
-        // else if (last_automation_)
-        // {
-        //     // going out of automation
-        //     // the idea is to maybe delay the defrost output for a little while.
-        // }
-        last_automation_ = automation;
+        else
+        {
+            float v = 0;
+            switch (defrost_state_)
+            {
+            case DefrostState::OFF: break;
+            default:
+            case DefrostState::INIT:
+                //
+                v = 0;
+                if (out_state < 20)
+                {
+                    defrost_state_ = DefrostState::ACTIVE;
+                    ESP_LOGI("blender", "DefrostState::ACTIVE");
+                }
+                break;
+            case DefrostState::ACTIVE:
+                //
+                v = defrost_value_;
+                break;
+            }
+            write_output(v, 0, 100);
+        }
+    }
 
+    void start_calibration()
+    {
+        this->calibration_state_ = CalibrationState::INIT;
+        ESP_LOGI("valve", "CalibrationState::INIT;");
+    }
+
+    CalibrationState do_calibration()
+    {
+        switch (this->calibration_state_)
+        {
+        case CalibrationState::INIT: break;
+        case CalibrationState::ACTIVE: break;
+        case CalibrationState::IDLE: break;
+        default: break;
+        }
+
+        // Untill this feature is actually implemented
+        this->calibration_state_ = CalibrationState::IDLE;
+        return this->calibration_state_;
+    }
+
+    void write_output(float value, float ll, float ul)
+    {
         // map the value on to the output range of the valve
         float out_range  = ul - ll;
         float actual_out = ll + value / 100 * out_range;
@@ -114,7 +186,17 @@ struct Valve
 
     void defrost(bool enable)
     {
-        defrost_ = enable;
+        if (enable)
+        {
+            if (defrost_state_ == DefrostState::OFF)
+            {
+                defrost_state_ = DefrostState::INIT;
+            }
+        }
+        else
+        {
+            defrost_state_ = DefrostState::OFF;
+        }
     }
 };
 
@@ -131,6 +213,10 @@ class BlenderComponent : public esphome::Component
     void adjust_outputs(float ctrl, float flow, bool automation);
 
     // float get_setup_priority() const override { return setup_priority::AFTER_WIFI; }
+    void set_calibrate_in(esphome::switch_::Switch* in)
+    {
+        this->calibrate_in_ = in;
+    }
 
     void set_manual_in(esphome::switch_::Switch* in)
     {
@@ -167,9 +253,12 @@ class BlenderComponent : public esphome::Component
     esphome::pid::PIDClimate* control_in_       = nullptr;
     esphome::switch_::Switch* manual_in_        = nullptr;
     esphome::switch_::Switch* defrost_in_       = nullptr;
+    esphome::switch_::Switch* calibrate_in_     = nullptr;
 
     Valve hot_valve_;
     Valve cold_valve_;
+
+    bool calibrate_ = false;
 };
 
 } // namespace blender

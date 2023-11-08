@@ -1,3 +1,5 @@
+static const char* TAG = "blender";
+
 #include "blender_component.h"
 #include "esphome/core/application.h"
 #include "esphome/core/log.h"
@@ -7,7 +9,6 @@ namespace esphome
 namespace blender
 {
 
-static const char* TAG = "blender";
 
 //*****************************************************************************
 //
@@ -35,28 +36,45 @@ void BlenderComponent::setup()
 //*****************************************************************************
 void BlenderComponent::loop()
 {
-    static uint32_t tally;
-    if (tally > 1000)
+    // static uint32_t tally;
+    // if (tally > 1000)
+    // {
+    //     float flow_strength = this->flow_strength_in_->state;
+    //     ESP_LOGI(TAG, "flow strength %f", flow_strength);
+    //
+    //     climate::ClimateMode mode = this->control_in_->mode;
+    //     ESP_LOGI(TAG, "climate mode %s", climate::climate_mode_to_string(mode));
+    //
+    //     float pid_out = this->control_in_->get_output_value();
+    //     ESP_LOGI(TAG, "pid out %f", pid_out);
+    //
+    //     ESP_LOGI(TAG, "hot out %f", this->hot_valve_.get_value());
+    //     ESP_LOGI(TAG, "cold out %f", this->cold_valve_.get_value());
+    //
+    //     tally = 0;
+    // }
+    // ++tally;
+
+    // sample and latch the switch
+    if (this->calibrate_in_->state)
     {
-        float flow_strength = this->flow_strength_in_->state;
-        ESP_LOGI(TAG, "flow strength %f", flow_strength);
-
-        climate::ClimateMode mode = this->control_in_->mode;
-        ESP_LOGI(TAG, "climate mode %s", climate::climate_mode_to_string(mode));
-
-        float pid_out = this->control_in_->get_output_value();
-        ESP_LOGI(TAG, "pid out %f", pid_out);
-
-        ESP_LOGI(TAG, "hot out %f", this->hot_valve_.get_value());
-        ESP_LOGI(TAG, "cold out %f", this->cold_valve_.get_value());
-
-        tally = 0;
+        this->calibrate_in_->turn_off();
+        this->calibrate_ = true;
+        this->hot_valve_.start_calibration();
+        this->cold_valve_.start_calibration();
     }
-    ++tally;
+
+    if (this->calibrate_)
+    {
+        bool hot_done  = (Valve::CalibrationState::IDLE == this->hot_valve_.do_calibration());
+        bool cold_done = (Valve::CalibrationState::IDLE == this->cold_valve_.do_calibration());
+
+        this->calibrate_ = !(hot_done && cold_done);
+        return;
+    }
 
     bool is_defrost = this->defrost_in_->state;
     this->hot_valve_.defrost(is_defrost);
-
 
     bool is_manual = this->manual_in_->state;
     if (is_manual)

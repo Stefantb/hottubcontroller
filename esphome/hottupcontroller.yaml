@@ -64,16 +64,19 @@ globals:
 blender:
   manual_switch: id_manual_control
   defrost_switch: id_defrost
+  calibrate_switch: id_calibrate
   pid_controller_in: id_pid_ctrl
   flow_strength_in: id_flow_strength
   hot_valve:
     out_dac: id_da1_motor_hot
+    in_adc: id_adc1_motor_hot
     manual_input: id_hot_output_slider
     out_lower_limit: 29
     out_upper_limit: 100
-    out_defrost: 32
+    out_defrost: 30
   cold_valve:
     out_dac: id_da2_motor_cold
+    in_adc: id_adc2_motor_cold
     manual_input: id_cold_output_slider
     out_lower_limit: 29
     out_upper_limit: 100
@@ -196,6 +199,17 @@ switch:
       - lambda: ESP_LOGI("custom", "Defrost OFF");
     turn_on_action:
       - lambda: ESP_LOGI("custom", "Defrost ON");
+
+  - platform: template
+    name: ${STR_BTN_CALIBRATE}
+    id: id_calibrate
+    optimistic: true
+    # assumed_state: true
+    restore_mode: RESTORE_DEFAULT_OFF
+    turn_off_action:
+      - lambda: ESP_LOGI("custom", "Calibrate OFF");
+    turn_on_action:
+      - lambda: ESP_LOGI("custom", "Calibrate ON");
 
 # *****************************************************************************
 #
